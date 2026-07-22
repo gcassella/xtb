@@ -418,6 +418,8 @@ module xtb_propertyoutput
       !> PTB specific property output
       use xtb_ptb_property, only: print_charges_to_screen
       use xtb_ptb_guess, only: get_psh_from_qsh
+      use xtb_ptb_io, only: write_ptb_matrix_npy, write_ptb_matrix_npz_csr, &
+         & write_ptb_ao_order
 
       use mctc_io_structure, only: structure_type
 
@@ -474,6 +476,17 @@ module xtb_propertyoutput
 
       if (set%pr_wbofrag) &
          call print_wbo_fragment(iunit, struc%n, struc%at, wfx%wbo, 0.1_wp)
+
+      !> Export the density matrix in the AO basis.
+      if (set%pr_ptbdump) then
+         if (set%ptbdump_sparse) then
+            call write_ptb_matrix_npz_csr('ptb_density.npz', wfx%P, &
+               & set%ptbdump_threshold)
+         else
+            call write_ptb_matrix_npy('ptb_density.npy', wfx%P)
+         end if
+         call write_ptb_ao_order('ptb_ao_order.npy', bas)
+      end if
 
       ! if (set%pr_tmmos) then
       !    call open_file(ifile, 'mos', 'w')

@@ -402,6 +402,9 @@ module xtb_setparam
    logical  :: pr_wiberg = .true.
    logical  :: pr_wbofrag = .false.
    logical  :: pr_charges = .true.
+   logical  :: pr_ptbdump = .false.
+   logical  :: ptbdump_sparse = .false.
+   real(wp) :: ptbdump_threshold = 1.0e-8_wp
    logical  :: pr_dipole = .true.
    logical  :: pr_mulliken = .true.
    logical  :: pr_eig = .true.

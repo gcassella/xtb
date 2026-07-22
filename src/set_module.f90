@@ -140,6 +140,7 @@ subroutine write_set(ictrl)
    call write_set_symmetry(ictrl)
    call write_set_embedding(ictrl)
    call write_set_write(ictrl)
+   call write_set_ptb(ictrl)
    call write_set_external(ictrl)
    call write_set_stm(ictrl)
    call write_set_path(ictrl)
@@ -381,6 +382,7 @@ subroutine write_set_write(ictrl)
    write(ictrl,'(3x,"wbo fragments=",a)')    bool2string(set%pr_wbofrag)
    write(ictrl,'(3x,"dipole=",a)')           bool2string(set%pr_dipole)
    write(ictrl,'(3x,"charges=",a)')          bool2string(set%pr_charges)
+   write(ictrl,'(3x,"ptb dump=",a)')         bool2string(set%pr_ptbdump)
    write(ictrl,'(3x,"mulliken=",a)')         bool2string(set%pr_mulliken)
    write(ictrl,'(3x,"orbital energies=",a)') bool2string(set%pr_eig)
    write(ictrl,'(3x,"inertia=",a)')          bool2string(set%pr_moments)
@@ -395,6 +397,15 @@ subroutine write_set_write(ictrl)
    write(ictrl,'(3x,"vib_normal_modes=",a)') bool2string(set%pr_nmtm)
    write(ictrl,'(3x,"hessian.out=",a)')      bool2string(set%pr_dftbp_hessian_out)
 end subroutine write_set_write
+
+subroutine write_set_ptb(ictrl)
+   use xtb_readin, only : bool2string
+   implicit none
+   integer,intent(in) :: ictrl
+   write(ictrl,'(a,"ptb")') flag
+   write(ictrl,'(3x,"sparse=",a)')           bool2string(set%ptbdump_sparse)
+   write(ictrl,'(3x,"threshold=",g0)')       set%ptbdump_threshold
+end subroutine write_set_ptb
 
 subroutine write_set_external(ictrl)
    implicit none
@@ -780,6 +791,7 @@ subroutine rdcontrol(fname,env,copy_file)
          !> data
          case('cube'     ); call rdblock(env,set_cube,    line,id,copy,err,ncount)
          case('write'    ); call rdblock(env,set_write,   line,id,copy,err,ncount)
+         case('ptb'      ); call rdblock(env,set_ptb,     line,id,copy,err,ncount)
          case('gfn'      ); call rdblock(env,set_gfn,     line,id,copy,err,ncount)
          case('ffnb'     )
             ! dynamic allocation of ffnb array requires reading fname before calling rdblock
@@ -1306,6 +1318,7 @@ subroutine set_write(env,key,val)
    logical,save :: set29 = .true.
    logical,save :: set30 = .true.
    logical,save :: set31 = .true.
+   logical,save :: set32 = .true.
    select case(key)
    case default ! do nothing
       call env%warning("the key '"//key//"' is not recognized by write",source)
@@ -1342,6 +1355,9 @@ subroutine set_write(env,key,val)
    case('charges')
       if (getValue(env,val,ldum).and.set10) set%pr_charges = ldum
       set10 = .false.
+   case('ptb dump')
+      if (getValue(env,val,ldum).and.set32) set%pr_ptbdump = ldum
+      set32 = .false.
    case('mulliken')
       if (getValue(env,val,ldum).and.set11) set%pr_mulliken = ldum
       set11 = .false.
@@ -2346,6 +2362,28 @@ subroutine set_cube(env,key,val)
       set4 = .false.
    end select
 end subroutine set_cube
+
+subroutine set_ptb(env,key,val)
+   implicit none
+   character(len=*), parameter :: source = 'set_ptb'
+   type(TEnvironment), intent(inout) :: env
+   character(len=*),intent(in) :: key
+   character(len=*),intent(in) :: val
+   real(wp) :: ddum
+   logical  :: ldum
+   logical,save :: set1 = .true.
+   logical,save :: set2 = .true.
+   select case(key)
+   case default ! do nothing
+      call env%warning("the key '"//key//"' is not recognized by ptb",source)
+   case('sparse')
+      if (getValue(env,val,ldum).and.set1) set%ptbdump_sparse = ldum
+      set1 = .false.
+   case('threshold')
+      if (getValue(env,val,ddum).and.set2) set%ptbdump_threshold = ddum
+      set2 = .false.
+   end select
+end subroutine set_ptb
 
 subroutine set_stm(env,key,val)
    implicit none
