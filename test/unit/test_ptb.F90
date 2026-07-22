@@ -68,6 +68,9 @@ contains
                   new_unittest("mb16-43-01_charged", test_ptb_mb16_43_01_charged), &
                   new_unittest("mb16-43-01_efield", test_ptb_mb16_43_01_efield), &
                   new_unittest("dipole_moment", test_ptb_dipmom_caffeine), &
+                  new_unittest("density_overlap_export", test_ptb_density_overlap_export), &
+                  new_unittest("nwchem_basis_export", test_ptb_nwchem_basis_export), &
+                  new_unittest("matrix_npy_npz", test_ptb_matrix_npy_npz), &
                   new_unittest("polarizability", test_ptb_polarizability) &
 #else
                   new_unittest("ptb_not_present", test_ptb_not_present) &
@@ -1386,6 +1389,241 @@ contains
       call check_(error, chk%wfn%wbo(13, 12), wbo_ref(2), thr=thr2)
 
    end subroutine test_ptb_mb16_43_01
+
+   subroutine test_ptb_density_overlap_export(error)
+      !> After a PTB singlepoint the AO overlap matrix is exposed on the
+      !> wavefunction. This test checks that the overlap is allocated with the
+      !> expected shape, is symmetric, and is consistent with the exported
+      !> density matrix: the trace of the product P*S must equal the number of
+      !> electrons of the system.
+      use xtb_ptb_calculator, only: TPTBCalculator, newPTBcalculator
+      use xtb_type_environment, only: TEnvironment, init
+      use xtb_type_calculator, only: TCalculator
+      use xtb_type_restart, only: TRestart
+      use xtb_type_data, only: scc_results
+      use xtb_setparam, only: set
+
+      type(error_type), allocatable, intent(out) :: error
+      type(TMolecule) :: struc
+      class(TCalculator), allocatable :: calc
+      type(TPTBCalculator), allocatable :: ptb, ptb_save
+      type(TEnvironment) :: env
+      type(TRestart) :: chk
+      type(scc_results) :: res
+      real(wp) :: energy, gap
+      real(wp), allocatable :: gradient(:, :)
+      real(wp) :: sigma(3, 3)
+      integer :: nao, iao, jao
+      real(wp) :: trace_ps
+
+      call init(env)
+      call getMolecule(struc, "mindless01")
+
+      allocate (ptb, ptb_save)
+      call newPTBCalculator(env, struc, ptb)
+      ptb_save = ptb
+      call move_alloc(ptb, calc)
+
+      !> Export data is only populated when the export is requested.
+      set%pr_ptbdump = .true.
+
+      gap = 0.0_wp
+      allocate (gradient(3, struc%n), source=0.0_wp)
+      call calc%singlepoint(env, struc, chk, 2, .false., energy, gradient, sigma, &
+         & gap, res)
+
+      call check_(error, allocated(chk%wfn%S))
+      if (allocated(error)) return
+
+      nao = ptb_save%bas%nao
+      call check_(error, size(chk%wfn%S, 1), nao)
+      call check_(error, size(chk%wfn%S, 2), nao)
+      call check_(error, size(chk%wfn%P, 1), nao)
+
+      do iao = 1, nao
+         do jao = 1, nao
+            call check_(error, chk%wfn%S(iao, jao), chk%wfn%S(jao, iao), thr=thr)
+         end do
+      end do
+      if (allocated(error)) then
+         set%pr_ptbdump = .false.
+         return
+      end if
+
+      trace_ps = 0.0_wp
+      do iao = 1, nao
+         do jao = 1, nao
+            trace_ps = trace_ps + chk%wfn%P(iao, jao) * chk%wfn%S(jao, iao)
+         end do
+      end do
+      call check_(error, trace_ps, real(chk%wfn%nel, wp), thr=thr2)
+
+      set%pr_ptbdump = .false.
+
+   end subroutine test_ptb_density_overlap_export
+
+   subroutine test_ptb_nwchem_basis_export(error)
+      !> Checks that every exported contracted function has unit self-overlap for
+      !> all spherical components, confirming the exported basis faithfully
+      !> reproduces the normalized AO basis of the density and overlap matrices.
+      !> The self-overlap is evaluated with tblite's contracted overlap routine.
+      use xtb_ptb_calculator, only: TPTBCalculator, newPTBcalculator
+      use xtb_type_environment, only: TEnvironment, init
+      use xtb_type_calculator, only: TCalculator
+      use xtb_type_restart, only: TRestart
+      use xtb_type_data, only: scc_results
+      use xtb_setparam, only: set
+      use tblite_basis_type, only: cgto_type
+      use tblite_integral_overlap, only: overlap_cgto, msao
+
+      type(error_type), allocatable, intent(out) :: error
+      type(TMolecule) :: struc
+      class(TCalculator), allocatable :: calc
+      type(TPTBCalculator), allocatable :: ptb, ptb_save
+      type(TEnvironment) :: env
+      type(TRestart) :: chk
+      type(scc_results) :: res
+      real(wp) :: energy, gap
+      real(wp), allocatable :: gradient(:, :)
+      real(wp) :: sigma(3, 3)
+      integer :: iat, ish, ishg, iprim, angmom, mcomp
+      real(wp) :: shellnorm
+      type(cgto_type) :: cgto
+      real(wp), allocatable :: shell_overlap(:, :)
+
+      call init(env)
+      call getMolecule(struc, "mindless01")
+
+      allocate (ptb, ptb_save)
+      call newPTBCalculator(env, struc, ptb)
+      ptb_save = ptb
+      call move_alloc(ptb, calc)
+
+      !> Export data is only populated when the export is requested.
+      set%pr_ptbdump = .true.
+
+      gap = 0.0_wp
+      allocate (gradient(3, struc%n), source=0.0_wp)
+      call calc%singlepoint(env, struc, chk, 2, .false., energy, gradient, sigma, &
+         & gap, res)
+
+      call check_(error, allocated(chk%wfn%aonorm))
+      if (allocated(error)) return
+
+      do iat = 1, struc%n
+         do ish = 1, ptb_save%bas%nsh_at(iat)
+            ishg = ptb_save%bas%ish_at(iat) + ish
+            angmom = ptb_save%bas%cgto(ish, iat)%ang
+            shellnorm = chk%wfn%aonorm(ptb_save%bas%iao_sh(ishg) + 1)
+
+            cgto%ang = angmom
+            cgto%nprim = ptb_save%bas%cgto(ish, iat)%nprim
+            do iprim = 1, cgto%nprim
+               cgto%alpha(iprim) = ptb_save%bas%cgto(ish, iat)%alpha(iprim)
+               cgto%coeff(iprim) = ptb_save%bas%cgto(ish, iat)%coeff(iprim) * shellnorm
+            end do
+
+            allocate (shell_overlap(msao(angmom), msao(angmom)))
+            call overlap_cgto(cgto, cgto, 0.0_wp, [0.0_wp, 0.0_wp, 0.0_wp], &
+               & 50.0_wp, shell_overlap)
+            do mcomp = 1, msao(angmom)
+               call check_(error, shell_overlap(mcomp, mcomp), 1.0_wp, thr=thr2)
+            end do
+            deallocate (shell_overlap)
+            if (allocated(error)) then
+               set%pr_ptbdump = .false.
+               return
+            end if
+         end do
+      end do
+
+      set%pr_ptbdump = .false.
+
+   end subroutine test_ptb_nwchem_basis_export
+
+   subroutine test_ptb_matrix_npy_npz(error)
+      !> Writes a small matrix through the dense (.npy) and sparse CSR (.npz)
+      !> writers and validates the produced byte streams: the .npy carries the
+      !> NumPy magic and version and round-trips its double-precision payload,
+      !> and the .npz is a ZIP whose end-of-central-directory reports the five
+      !> CSR member arrays.
+      use, intrinsic :: iso_fortran_env, only: int8, int16, int32, int64
+      use xtb_ptb_io, only: write_ptb_matrix_npy, write_ptb_matrix_npz_csr
+
+      type(error_type), allocatable, intent(out) :: error
+      real(wp), parameter :: mat(3, 3) = reshape( &
+         & [1.0_wp, 0.0_wp, 0.5_wp, 0.0_wp, 2.0_wp, 0.0_wp, 0.5_wp, 0.0_wp, 3.0_wp], [3, 3])
+      character(len=*), parameter :: npyfile = "test_ptb_matrix.npy"
+      character(len=*), parameter :: npzfile = "test_ptb_matrix.npz"
+      integer :: unit, headerlen
+      integer(int8) :: magic(6), version(2)
+      integer(int16) :: hlen16
+      integer(int32) :: signature, eocd_signature
+      integer(int16) :: total_members
+      real(wp) :: roundtrip(3, 3)
+
+      call write_ptb_matrix_npy(npyfile, mat)
+
+      open (newunit=unit, file=npyfile, access='stream', form='unformatted', &
+         & status='old')
+      read (unit) magic
+      read (unit) version
+      read (unit) hlen16
+      call check_(error, int(magic(1)), -109)
+      call check_(error, transfer(magic(2:6), "     "), "NUMPY")
+      call check_(error, int(version(1)), 1)
+      call check_(error, int(version(2)), 0)
+      headerlen = int(hlen16)
+      call check_(error, mod(10 + headerlen, 64), 0)
+      if (allocated(error)) then
+         close (unit)
+         return
+      end if
+      read (unit, pos=10 + headerlen + 1) roundtrip
+      close (unit)
+      call check_(error, maxval(abs(roundtrip - mat)), 0.0_wp, thr=thr)
+      if (allocated(error)) return
+
+      call write_ptb_matrix_npz_csr(npzfile, mat, 1.0e-8_wp)
+
+      open (newunit=unit, file=npzfile, access='stream', form='unformatted', &
+         & status='old')
+      read (unit) signature
+      call check_(error, signature, int(z'04034b50', int32))
+      call read_eocd_member_count(unit, eocd_signature, total_members)
+      close (unit)
+      call check_(error, eocd_signature, int(z'06054b50', int32))
+      call check_(error, int(total_members), 5)
+
+   end subroutine test_ptb_matrix_npy_npz
+
+   !> Scan a stream unit for the ZIP end-of-central-directory record and return
+   !> its signature and the total member count field.
+   subroutine read_eocd_member_count(unit, signature, total_members)
+      use, intrinsic :: iso_fortran_env, only: int8, int16, int32, int64
+      integer, intent(in) :: unit
+      integer(int32), intent(out) :: signature
+      integer(int16), intent(out) :: total_members
+
+      integer(int64) :: filesize, pos
+      integer(int32) :: word
+      integer(int16) :: skip
+
+      inquire (unit=unit, size=filesize)
+      signature = 0
+      total_members = 0
+      do pos = filesize - 21, 1, -1
+         read (unit, pos=pos) word
+         if (word == int(z'06054b50', int32)) then
+            signature = word
+            read (unit, pos=pos + 4) skip
+            read (unit, pos=pos + 6) skip
+            read (unit, pos=pos + 8) skip
+            read (unit, pos=pos + 10) total_members
+            return
+         end if
+      end do
+   end subroutine read_eocd_member_count
 
    subroutine test_ptb_mb16_43_01_charged(error)
       !> PTB overlap matrix calculation

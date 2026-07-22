@@ -301,6 +301,16 @@ contains
          end if
       end if
       call convert_tblite_to_wfn(env, self%bas, mol, chk, wbo=wbo)
+
+      !> Store the AO overlap and per-AO normalization factors for later export;
+      !> gated to avoid holding a full nao*nao overlap copy on every PTB run.
+      !> Must run after 'convert_tblite_to_wfn', which reallocates the
+      !> wavefunction and would otherwise drop these fields.
+      if (set%pr_ptbdump) then
+         allocate (chk%wfn%S(self%bas%nao, self%bas%nao), source=ints%overlap)
+         allocate (chk%wfn%aonorm(self%bas%nao), source=auxints%norm)
+      end if
+
       call convert_tblite_to_results(results,mol,chk,energy,.true.)
       hlgap = results%hl_gap
 

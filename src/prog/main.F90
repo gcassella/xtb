@@ -1697,6 +1697,9 @@ contains
          case ('--molden')
             call set_write(env, 'mos', 'true')
 
+         case ('--ptbdump')
+            call set_write(env, 'ptb dump', 'true')
+
          case ('--dipole')
             call set_write(env, 'dipole', 'true')
 

@@ -418,6 +418,8 @@ module xtb_propertyoutput
       !> PTB specific property output
       use xtb_ptb_property, only: print_charges_to_screen
       use xtb_ptb_guess, only: get_psh_from_qsh
+      use xtb_ptb_io, only: write_ptb_matrix_npy, write_ptb_matrix_npz_csr, &
+         & write_ptb_basis_nwchem
 
       use mctc_io_structure, only: structure_type
 
@@ -474,6 +476,29 @@ module xtb_propertyoutput
 
       if (set%pr_wbofrag) &
          call print_wbo_fragment(iunit, struc%n, struc%at, wfx%wbo, 0.1_wp)
+
+      !> Export the density matrix, overlap matrix and basis set in the AO basis.
+      !> Dense NumPy (.npy) is the default; a sparse CSR (.npz) with a magnitude
+      !> threshold is used instead when requested in the $ptb control block.
+      if (set%pr_ptbdump) then
+         if (allocated(wfx%S) .and. allocated(wfx%aonorm)) then
+            if (set%ptbdump_sparse) then
+               call write_ptb_matrix_npz_csr('ptb_density.npz', wfx%P, &
+                  & set%ptbdump_threshold)
+               call write_ptb_matrix_npz_csr('ptb_overlap.npz', wfx%S, &
+                  & set%ptbdump_threshold)
+            else
+               call write_ptb_matrix_npy('ptb_density.npy', wfx%P)
+               call write_ptb_matrix_npy('ptb_overlap.npy', wfx%S)
+            end if
+            call open_file(ifile, 'ptb_basis.nw', 'w')
+            call write_ptb_basis_nwchem(ifile, mol, bas, wfx%aonorm)
+            call close_file(ifile)
+         else
+            call env%warning("PTB density export data not available", &
+               & "tblite_ptb_property")
+         end if
+      end if
 
       ! if (set%pr_tmmos) then
       !    call open_file(ifile, 'mos', 'w')

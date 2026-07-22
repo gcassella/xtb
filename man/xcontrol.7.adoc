@@ -576,6 +576,11 @@ $write
     calculate and print dipole moment
 *charges*='bool'::
     print charges file
+*ptb dump*='bool'::
+    write the PTB density matrix (ptb_density.npy/.npz), overlap matrix
+    (ptb_overlap.npy/.npz) in the AO basis and the vDZP basis set in NWChem
+    format (ptb_basis.nw) for real-space reconstruction; see the ptb group for
+    the sparse output options (PTB only)
 *mulliken*='bool'::
     print mulliken population analysis
 *orbital energies*='bool'::
@@ -600,6 +605,19 @@ $write
     write normal modes as Turbomole vibrational modes data group
 *hessian.out*='bool'::
     write DFTB+ style hessian.out file containing the unprojected hessian
+
+$ptb
+~~~~
+Options controlling the PTB density/overlap matrix export enabled by
+'$write/ptb dump=true' (or *--ptbdump*).
+
+*sparse*='bool'::
+    write the density and overlap matrices as SciPy CSR sparse matrices
+    (ptb_density.npz, ptb_overlap.npz) instead of dense NumPy arrays
+    (default: false)
+*threshold*='real'::
+    when *sparse* is enabled, drop matrix elements with absolute value at or
+    below this cutoff (default: 1.0e-8)
 
 LEGACY
 ~~~~~~

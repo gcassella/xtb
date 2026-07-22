@@ -27,6 +27,7 @@ srcs += files(
   'corebasis.F90',
   'hamiltonian.F90',
   'guess.F90',
+  'io.F90',
   'paulixc.F90',
   'integral_types.F90',
   'coulomb.F90',
