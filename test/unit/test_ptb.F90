@@ -70,6 +70,7 @@ contains
                   new_unittest("dipole_moment", test_ptb_dipmom_caffeine), &
                   new_unittest("density_overlap_export", test_ptb_density_overlap_export), &
                   new_unittest("nwchem_basis_export", test_ptb_nwchem_basis_export), &
+                  new_unittest("ao_order_export", test_ptb_ao_order_export), &
                   new_unittest("polarizability", test_ptb_polarizability) &
 #else
                   new_unittest("ptb_not_present", test_ptb_not_present) &
@@ -1561,6 +1562,93 @@ contains
       set%pr_ptbdump = .false.
 
    end subroutine test_ptb_nwchem_basis_export
+
+   subroutine test_ptb_ao_order_export(error)
+      !> Builds the AO-ordering array in memory and validates it against the
+      !> basis: it must reference atoms in range, and within every shell the
+      !> angular momentum must match the basis while the magnetic quantum numbers
+      !> run over -l..+l exactly once, matching tblite's spherical component
+      !> order. This is the mapping the exported ptb_ao_order.npy encodes.
+      use xtb_ptb_calculator, only: TPTBCalculator, newPTBcalculator
+      use xtb_type_environment, only: TEnvironment, init
+      use xtb_type_calculator, only: TCalculator
+      use xtb_type_restart, only: TRestart
+      use xtb_type_data, only: scc_results
+      use xtb_setparam, only: set
+      use tblite_basis_type, only: basis_type
+
+      type(error_type), allocatable, intent(out) :: error
+      type(TMolecule) :: struc
+      type(structure_type) :: mol
+      class(TCalculator), allocatable :: calc
+      type(TPTBCalculator), allocatable :: ptb, ptb_save
+      type(TEnvironment) :: env
+      type(TRestart) :: chk
+      type(scc_results) :: res
+      real(wp) :: energy, gap
+      real(wp), allocatable :: gradient(:, :)
+      real(wp) :: sigma(3, 3)
+      integer :: iat, ish, ishg, angmom, mcomp, iao
+      integer, allocatable :: ao_atom(:), ao_l(:), ao_m(:)
+
+      call init(env)
+      call getMolecule(struc, "mindless01")
+      mol = struc
+
+      allocate (ptb, ptb_save)
+      call newPTBCalculator(env, struc, ptb)
+      ptb_save = ptb
+      call move_alloc(ptb, calc)
+
+      set%pr_ptbdump = .true.
+      gap = 0.0_wp
+      allocate (gradient(3, struc%n), source=0.0_wp)
+      call calc%singlepoint(env, struc, chk, 2, .false., energy, gradient, sigma, &
+         & gap, res)
+      set%pr_ptbdump = .false.
+
+      !> Reconstruct the exported (atom, l, m) mapping from the basis.
+      associate (bas => ptb_save%bas)
+         allocate (ao_atom(bas%nao), ao_l(bas%nao), ao_m(bas%nao))
+         do iao = 1, bas%nao
+            iat = bas%ao2at(iao)
+            ishg = bas%ao2sh(iao)
+            angmom = bas%cgto(ishg - bas%ish_at(iat), iat)%ang
+            ao_atom(iao) = iat
+            ao_l(iao) = angmom
+            ao_m(iao) = iao - bas%iao_sh(ishg) - 1 - angmom
+         end do
+
+         !> Atom indices must be in range and l non-negative.
+         do iao = 1, bas%nao
+            if (ao_atom(iao) < 1 .or. ao_atom(iao) > mol%nat) then
+               call test_failed(error, "AO atom index out of range")
+               return
+            end if
+            if (ao_l(iao) < 0) then
+               call test_failed(error, "AO angular momentum negative")
+               return
+            end if
+         end do
+
+         !> Within each shell the m values must be exactly -l..+l in order.
+         do iat = 1, mol%nat
+            do ish = 1, bas%nsh_at(iat)
+               ishg = bas%ish_at(iat) + ish
+               angmom = bas%cgto(ish, iat)%ang
+               do mcomp = 1, 2 * angmom + 1
+                  iao = bas%iao_sh(ishg) + mcomp
+                  if (ao_l(iao) /= angmom .or. ao_atom(iao) /= iat .or. &
+                     & ao_m(iao) /= mcomp - 1 - angmom) then
+                     call test_failed(error, "AO ordering inconsistent with basis")
+                     return
+                  end if
+               end do
+            end do
+         end do
+      end associate
+
+   end subroutine test_ptb_ao_order_export
 
    subroutine test_ptb_mb16_43_01_charged(error)
       !> PTB overlap matrix calculation

@@ -25,7 +25,7 @@
 !> density rho(r) = sum_{mu,nu} P_{mu,nu} phi_mu(r) phi_nu(r).
 module xtb_ptb_io
 #if WITH_TBLITE
-   use, intrinsic :: iso_fortran_env, only: int8, int16
+   use, intrinsic :: iso_fortran_env, only: int8, int16, int64
    use mctc_env, only: wp
    use mctc_io, only: structure_type
    use mctc_io_constants, only: pi
@@ -39,6 +39,7 @@ module xtb_ptb_io
       & [1.0_wp, 1.0_wp, 3.0_wp, 15.0_wp, 105.0_wp, 945.0_wp, 10395.0_wp, 135135.0_wp]
 
    public :: write_ptb_matrix_npy
+   public :: write_ptb_ao_order
    public :: write_ptb_basis_nwchem
    public :: nwchem_primitive_coeff
    public :: primitive_normalizer
@@ -52,10 +53,8 @@ contains
    !> Write a dense matrix to a NumPy .npy file (format version 1.0).
    !>
    !> The matrix is stored in its native column-major (Fortran) order, so it is
-   !> read back without transposition by numpy.load. The AO ordering follows
-   !> tblite's spherical-harmonic convention (m = -l..+l per shell), which
-   !> differs from NWChem's; a consumer combining these matrices with the
-   !> exported NWChem basis must reorder rows/columns accordingly.
+   !> read back without transposition by numpy.load. The row/column AO ordering
+   !> is that of write_ptb_ao_order (tblite's m = -l..+l per shell).
    !>
    !> Args:
    !>   filename: Path of the .npy file to create.
@@ -74,6 +73,44 @@ contains
       write (unit) mat
       close (unit)
    end subroutine write_ptb_matrix_npy
+
+   !> Write the atomic-orbital ordering of the exported matrices to a NumPy .npy
+   !> file as an integer array of shape (nao, 3).
+   !>
+   !> Row iao holds (atom, l, m) for the iao-th row/column of the density and
+   !> overlap matrices: the one-based atom index, the angular momentum l, and the
+   !> signed magnetic quantum number m in the range -l..+l (tblite's ordering).
+   !> This makes the AO layout explicit so a consumer can build the permutation
+   !> to any target program's convention without assuming ours.
+   !>
+   !> Args:
+   !>   filename: Path of the .npy file to create.
+   !>   bas: Persistent PTB basis set.
+   subroutine write_ptb_ao_order(filename, bas)
+      character(len=*), intent(in) :: filename
+      type(basis_type), intent(in) :: bas
+
+      integer :: unit, iao, iat, ishg, angmom
+      integer(int64), allocatable :: ao_order(:, :)
+      character(len=40) :: shapebuffer
+
+      allocate (ao_order(bas%nao, 3))
+      do iao = 1, bas%nao
+         iat = bas%ao2at(iao)
+         ishg = bas%ao2sh(iao)
+         angmom = bas%cgto(ishg - bas%ish_at(iat), iat)%ang
+         ao_order(iao, 1) = int(iat, int64)
+         ao_order(iao, 2) = int(angmom, int64)
+         ao_order(iao, 3) = int(iao - bas%iao_sh(ishg) - 1 - angmom, int64)
+      end do
+
+      open (newunit=unit, file=filename, access='stream', form='unformatted', &
+         & status='replace')
+      write (shapebuffer, '(a,i0,a)') "(", bas%nao, ", 3)"
+      call write_npy_header(unit, trim(shapebuffer), descr="<i8")
+      write (unit) ao_order
+      close (unit)
+   end subroutine write_ptb_ao_order
 
    !> Write the vDZP basis set in NWChem format, faithful to the normalized AO
    !> basis in which the exported density and overlap matrices are expressed.

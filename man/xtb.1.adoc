@@ -179,12 +179,14 @@ OPTIONS
 
 *--ptbdump*::
     with *--ptb*, writes the density matrix ('ptb_density.npy'), the overlap
-    matrix ('ptb_overlap.npy') in the atomic-orbital basis, and the vDZP basis
-    set in NWChem format ('ptb_basis.nw'), together sufficient to reconstruct
-    the real-space density. The matrices use tblite's spherical-harmonic
-    component ordering (m = -l..+l per shell), which differs from the
-    NWChem/PySCF ordering for p shells (px, py, pz); a consumer must reorder
-    the p rows and columns of the matrices accordingly.
+    matrix ('ptb_overlap.npy') in the atomic-orbital basis, the vDZP basis set
+    in NWChem format ('ptb_basis.nw'), and the atomic-orbital ordering of the
+    matrices ('ptb_ao_order.npy'), together sufficient to reconstruct the
+    real-space density. The matrices use tblite's spherical-harmonic component
+    ordering (m = -l..+l per shell), which differs from the NWChem/PySCF
+    ordering for p shells (px, py, pz); 'ptb_ao_order.npy' gives the (atom, l,
+    m) of each row/column so a consumer can build the permutation to any target
+    program's convention.
 
 *--alpha* ::
     requests the extension of electrical properties to static molecular dipole polarizabilities
@@ -448,6 +450,9 @@ OUTPUT
 
 *ptb_basis.nw*::
    PTB vDZP basis set in NWChem format for real-space reconstruction
+
+*ptb_ao_order.npy*::
+   atomic-orbital ordering (atom, l, m) of the PTB density and overlap matrices
 
 *pcgrad*::
    gradient of the point charges
