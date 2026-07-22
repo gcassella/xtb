@@ -177,6 +177,15 @@ OPTIONS
 *--molden*::
     requests printout of molden file
 
+*--ptbdump*::
+    with *--ptb*, writes the density matrix ('ptb_density.npy'), in the atomic-
+    orbital basis. The matrix is written in NumPy v1.0 array format by default;
+    with 'sparse=true' in the '$ptb' control block it is written in SciPy
+    CSR sparse matrix format ('ptb_density.npz') instead. The matrix uses
+    tblite's spherical-harmonic component ordering (m = -l..+l per
+    shell); 'ptb_ao_order.npy' gives the (atom, l, m) of each row/column so a
+    consumer can build the permutation to any target program's convention.
+
 *--alpha* ::
     requests the extension of electrical properties to static molecular dipole polarizabilities
 
@@ -430,6 +439,13 @@ OUTPUT
 
 *molden.input*::
    MOs and occupation for visualisation and sTDA-xTB calculations
+
+*ptb_density.npy*, *ptb_density.npz*::
+   PTB density matrix in the atomic-orbital basis, as a dense NumPy array
+   (.npy) or, when 'sparse=true', a SciPy CSR sparse matrix (.npz)
+
+*ptb_ao_order.npy*::
+   atomic-orbital ordering (atom, l, m) of the PTB density and overlap matrices
 
 *pcgrad*::
    gradient of the point charges
