@@ -28,6 +28,7 @@ list(APPEND srcs
   "${dir}/corebasis.F90"
   "${dir}/hamiltonian.F90"
   "${dir}/guess.F90"
+  "${dir}/io.F90"
   "${dir}/paulixc.F90"
   "${dir}/integral_types.F90"
   "${dir}/integrals.F90"

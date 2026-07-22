@@ -381,6 +381,7 @@ subroutine write_set_write(ictrl)
    write(ictrl,'(3x,"wbo fragments=",a)')    bool2string(set%pr_wbofrag)
    write(ictrl,'(3x,"dipole=",a)')           bool2string(set%pr_dipole)
    write(ictrl,'(3x,"charges=",a)')          bool2string(set%pr_charges)
+   write(ictrl,'(3x,"ptb dump=",a)')         bool2string(set%pr_ptbdump)
    write(ictrl,'(3x,"mulliken=",a)')         bool2string(set%pr_mulliken)
    write(ictrl,'(3x,"orbital energies=",a)') bool2string(set%pr_eig)
    write(ictrl,'(3x,"inertia=",a)')          bool2string(set%pr_moments)
@@ -1306,6 +1307,7 @@ subroutine set_write(env,key,val)
    logical,save :: set29 = .true.
    logical,save :: set30 = .true.
    logical,save :: set31 = .true.
+   logical,save :: set32 = .true.
    select case(key)
    case default ! do nothing
       call env%warning("the key '"//key//"' is not recognized by write",source)
@@ -1342,6 +1344,9 @@ subroutine set_write(env,key,val)
    case('charges')
       if (getValue(env,val,ldum).and.set10) set%pr_charges = ldum
       set10 = .false.
+   case('ptb dump')
+      if (getValue(env,val,ldum).and.set32) set%pr_ptbdump = ldum
+      set32 = .false.
    case('mulliken')
       if (getValue(env,val,ldum).and.set11) set%pr_mulliken = ldum
       set11 = .false.

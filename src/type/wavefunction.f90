@@ -43,6 +43,13 @@ module xtb_type_wavefunction
       !> density matrix
       real(wp),allocatable :: P(:,:)    
 
+      !> overlap matrix (optional; populated by methods that expose it, e.g. PTB)
+      real(wp),allocatable :: S(:,:)    
+
+      !> per-AO normalization relating the raw contracted basis functions to the
+      !> normalized functions in which P and S are expressed (optional, e.g. PTB)
+      real(wp),allocatable :: aonorm(:) 
+
       !> partial charges
       real(wp),allocatable :: q(:)      
 
@@ -113,6 +120,8 @@ end subroutine allocate_wavefunction
 subroutine deallocate_wavefunction(self)
    class(TWavefunction),intent(inout) :: self
    if(allocated(self%P))    deallocate(self%P)
+   if(allocated(self%S))    deallocate(self%S)
+   if(allocated(self%aonorm)) deallocate(self%aonorm)
    if(allocated(self%q))    deallocate(self%q)
    if(allocated(self%qsh))  deallocate(self%qsh)
    if(allocated(self%dipm)) deallocate(self%dipm)

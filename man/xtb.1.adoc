@@ -177,6 +177,14 @@ OPTIONS
 *--molden*::
     requests printout of molden file
 
+*--ptbdump*::
+    with *--ptb*, writes the density matrix ('ptb_density.npy'), the overlap
+    matrix ('ptb_overlap.npy') in the atomic-orbital basis, and the vDZP basis
+    set in NWChem format ('ptb_basis.nw'), together sufficient to reconstruct
+    the real-space density. The matrices use tblite's spherical-harmonic
+    component ordering (m = -l..+l), which differs from NWChem's; a consumer
+    reading the basis through NWChem must reorder the matrices accordingly.
+
 *--alpha* ::
     requests the extension of electrical properties to static molecular dipole polarizabilities
 
@@ -430,6 +438,15 @@ OUTPUT
 
 *molden.input*::
    MOs and occupation for visualisation and sTDA-xTB calculations
+
+*ptb_density.npy*::
+   PTB density matrix in the atomic-orbital basis, as a dense NumPy array
+
+*ptb_overlap.npy*::
+   PTB overlap matrix in the atomic-orbital basis, as a dense NumPy array
+
+*ptb_basis.nw*::
+   PTB vDZP basis set in NWChem format for real-space reconstruction
 
 *pcgrad*::
    gradient of the point charges

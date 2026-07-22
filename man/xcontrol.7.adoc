@@ -576,6 +576,10 @@ $write
     calculate and print dipole moment
 *charges*='bool'::
     print charges file
+*ptb dump*='bool'::
+    write the PTB density matrix (ptb_density.npy), overlap matrix
+    (ptb_overlap.npy) in the AO basis and the vDZP basis set in NWChem format
+    (ptb_basis.nw) for real-space reconstruction (PTB only)
 *mulliken*='bool'::
     print mulliken population analysis
 *orbital energies*='bool'::

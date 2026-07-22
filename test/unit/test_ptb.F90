@@ -68,6 +68,8 @@ contains
                   new_unittest("mb16-43-01_charged", test_ptb_mb16_43_01_charged), &
                   new_unittest("mb16-43-01_efield", test_ptb_mb16_43_01_efield), &
                   new_unittest("dipole_moment", test_ptb_dipmom_caffeine), &
+                  new_unittest("density_overlap_export", test_ptb_density_overlap_export), &
+                  new_unittest("nwchem_basis_export", test_ptb_nwchem_basis_export), &
                   new_unittest("polarizability", test_ptb_polarizability) &
 #else
                   new_unittest("ptb_not_present", test_ptb_not_present) &
@@ -1386,6 +1388,179 @@ contains
       call check_(error, chk%wfn%wbo(13, 12), wbo_ref(2), thr=thr2)
 
    end subroutine test_ptb_mb16_43_01
+
+   subroutine test_ptb_density_overlap_export(error)
+      !> After a PTB singlepoint the AO overlap matrix is exposed on the
+      !> wavefunction. This test checks that the overlap is allocated with the
+      !> expected shape, is symmetric, and is consistent with the exported
+      !> density matrix: the trace of the product P*S must equal the number of
+      !> electrons of the system.
+      use xtb_ptb_calculator, only: TPTBCalculator, newPTBcalculator
+      use xtb_type_environment, only: TEnvironment, init
+      use xtb_type_calculator, only: TCalculator
+      use xtb_type_restart, only: TRestart
+      use xtb_type_data, only: scc_results
+      use xtb_setparam, only: set
+
+      type(error_type), allocatable, intent(out) :: error
+      type(TMolecule) :: struc
+      class(TCalculator), allocatable :: calc
+      type(TPTBCalculator), allocatable :: ptb, ptb_save
+      type(TEnvironment) :: env
+      type(TRestart) :: chk
+      type(scc_results) :: res
+      real(wp) :: energy, gap
+      real(wp), allocatable :: gradient(:, :)
+      real(wp) :: sigma(3, 3)
+      integer :: nao, iao, jao
+      real(wp) :: trace_ps
+
+      call init(env)
+      call getMolecule(struc, "mindless01")
+
+      allocate (ptb, ptb_save)
+      call newPTBCalculator(env, struc, ptb)
+      ptb_save = ptb
+      call move_alloc(ptb, calc)
+
+      !> Export data is only populated when the export is requested.
+      set%pr_ptbdump = .true.
+
+      gap = 0.0_wp
+      allocate (gradient(3, struc%n), source=0.0_wp)
+      call calc%singlepoint(env, struc, chk, 2, .false., energy, gradient, sigma, &
+         & gap, res)
+
+      call check_(error, allocated(chk%wfn%S))
+      if (allocated(error)) return
+
+      nao = ptb_save%bas%nao
+      call check_(error, size(chk%wfn%S, 1), nao)
+      call check_(error, size(chk%wfn%S, 2), nao)
+      call check_(error, size(chk%wfn%P, 1), nao)
+
+      do iao = 1, nao
+         do jao = 1, nao
+            call check_(error, chk%wfn%S(iao, jao), chk%wfn%S(jao, iao), thr=thr)
+         end do
+      end do
+      if (allocated(error)) then
+         set%pr_ptbdump = .false.
+         return
+      end if
+
+      trace_ps = 0.0_wp
+      do iao = 1, nao
+         do jao = 1, nao
+            trace_ps = trace_ps + chk%wfn%P(iao, jao) * chk%wfn%S(jao, iao)
+         end do
+      end do
+      call check_(error, trace_ps, real(chk%wfn%nel, wp), thr=thr2)
+
+      set%pr_ptbdump = .false.
+
+   end subroutine test_ptb_density_overlap_export
+
+   subroutine test_ptb_nwchem_basis_export(error)
+      !> Validates the NWChem basis export on two independent fronts. First, the
+      !> normalized contracted function (tblite coefficients scaled by the
+      !> per-shell aonorm factor) must have unit self-overlap across all
+      !> spherical components, evaluated with tblite's contracted overlap
+      !> routine; this confirms the per-shell normalization assumption. Second,
+      !> the bare coefficient the exporter writes, when re-normalized by an
+      !> independent restatement of the primitive normalization NWChem applies on
+      !> read, must reproduce the normalized coefficient exactly; this exercises
+      !> the exporter's divide-by-primitive-normalizer step without cancelling it
+      !> against the routine under test.
+      use xtb_ptb_calculator, only: TPTBCalculator, newPTBcalculator
+      use xtb_type_environment, only: TEnvironment, init
+      use xtb_type_calculator, only: TCalculator
+      use xtb_type_restart, only: TRestart
+      use xtb_type_data, only: scc_results
+      use xtb_setparam, only: set
+      use xtb_ptb_io, only: nwchem_primitive_coeff
+      use tblite_basis_type, only: cgto_type
+      use tblite_integral_overlap, only: overlap_cgto, msao
+
+      type(error_type), allocatable, intent(out) :: error
+      type(TMolecule) :: struc
+      class(TCalculator), allocatable :: calc
+      type(TPTBCalculator), allocatable :: ptb, ptb_save
+      type(TEnvironment) :: env
+      type(TRestart) :: chk
+      type(scc_results) :: res
+      real(wp) :: energy, gap
+      real(wp), allocatable :: gradient(:, :)
+      real(wp) :: sigma(3, 3)
+      integer :: iat, ish, ishg, iprim, angmom, mcomp
+      real(wp) :: shellnorm, bare, refnorm
+      real(wp), parameter :: pi = 3.14159265358979323846_wp
+      !> Independent (2*l-1)!! reference for the primitive normalization check.
+      real(wp), parameter :: dfac(0:4) = [1.0_wp, 1.0_wp, 3.0_wp, 15.0_wp, 105.0_wp]
+      type(cgto_type) :: cgto
+      real(wp), allocatable :: shell_overlap(:, :)
+
+      call init(env)
+      call getMolecule(struc, "mindless01")
+
+      allocate (ptb, ptb_save)
+      call newPTBCalculator(env, struc, ptb)
+      ptb_save = ptb
+      call move_alloc(ptb, calc)
+
+      !> Export data is only populated when the export is requested.
+      set%pr_ptbdump = .true.
+
+      gap = 0.0_wp
+      allocate (gradient(3, struc%n), source=0.0_wp)
+      call calc%singlepoint(env, struc, chk, 2, .false., energy, gradient, sigma, &
+         & gap, res)
+
+      call check_(error, allocated(chk%wfn%aonorm))
+      if (allocated(error)) return
+
+      do iat = 1, struc%n
+         do ish = 1, ptb_save%bas%nsh_at(iat)
+            ishg = ptb_save%bas%ish_at(iat) + ish
+            angmom = ptb_save%bas%cgto(ish, iat)%ang
+            shellnorm = chk%wfn%aonorm(ptb_save%bas%iao_sh(ishg) + 1)
+
+            cgto%ang = angmom
+            cgto%nprim = ptb_save%bas%cgto(ish, iat)%nprim
+            do iprim = 1, cgto%nprim
+               cgto%alpha(iprim) = ptb_save%bas%cgto(ish, iat)%alpha(iprim)
+               cgto%coeff(iprim) = ptb_save%bas%cgto(ish, iat)%coeff(iprim) * shellnorm
+
+               !> Exporter round-trip: re-normalize the written bare coefficient
+               !> with an independent formula and recover the normalized value.
+               bare = nwchem_primitive_coeff(cgto%alpha(iprim), angmom, &
+                  & ptb_save%bas%cgto(ish, iat)%coeff(iprim), shellnorm)
+               refnorm = (2.0_wp * cgto%alpha(iprim) / pi)**0.75_wp &
+                  & * sqrt(4.0_wp * cgto%alpha(iprim))**angmom / sqrt(dfac(angmom))
+               call check_(error, bare * refnorm, cgto%coeff(iprim), thr=thr)
+            end do
+            if (allocated(error)) then
+               set%pr_ptbdump = .false.
+               return
+            end if
+
+            allocate (shell_overlap(msao(angmom), msao(angmom)))
+            call overlap_cgto(cgto, cgto, 0.0_wp, [0.0_wp, 0.0_wp, 0.0_wp], &
+               & 50.0_wp, shell_overlap)
+            do mcomp = 1, msao(angmom)
+               call check_(error, shell_overlap(mcomp, mcomp), 1.0_wp, thr=thr2)
+            end do
+            deallocate (shell_overlap)
+            if (allocated(error)) then
+               set%pr_ptbdump = .false.
+               return
+            end if
+         end do
+      end do
+
+      set%pr_ptbdump = .false.
+
+   end subroutine test_ptb_nwchem_basis_export
 
    subroutine test_ptb_mb16_43_01_charged(error)
       !> PTB overlap matrix calculation

@@ -418,6 +418,7 @@ module xtb_propertyoutput
       !> PTB specific property output
       use xtb_ptb_property, only: print_charges_to_screen
       use xtb_ptb_guess, only: get_psh_from_qsh
+      use xtb_ptb_io, only: write_ptb_matrix_npy, write_ptb_basis_nwchem
 
       use mctc_io_structure, only: structure_type
 
@@ -474,6 +475,23 @@ module xtb_propertyoutput
 
       if (set%pr_wbofrag) &
          call print_wbo_fragment(iunit, struc%n, struc%at, wfx%wbo, 0.1_wp)
+
+      !> Export the density matrix, overlap matrix and basis set in the AO basis
+      !> as dense NumPy (.npy) files plus an NWChem basis description.
+      if (set%pr_ptbdump) then
+         if (allocated(wfx%S) .and. allocated(wfx%aonorm)) then
+            call write_ptb_matrix_npy('ptb_density.npy', wfx%P)
+            call write_ptb_matrix_npy('ptb_overlap.npy', wfx%S)
+            call open_file(ifile, 'ptb_basis.nw', 'w')
+            !> 'bas' must be the persistent PTB basis (unscaled exponents,
+            !> expscal = 1), matching the basis in which P and S are expressed.
+            call write_ptb_basis_nwchem(ifile, mol, bas, wfx%aonorm)
+            call close_file(ifile)
+         else
+            call env%warning("PTB density export data not available", &
+               & "tblite_ptb_property")
+         end if
+      end if
 
       ! if (set%pr_tmmos) then
       !    call open_file(ifile, 'mos', 'w')
