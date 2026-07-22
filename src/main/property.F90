@@ -418,8 +418,8 @@ module xtb_propertyoutput
       !> PTB specific property output
       use xtb_ptb_property, only: print_charges_to_screen
       use xtb_ptb_guess, only: get_psh_from_qsh
-      use xtb_ptb_io, only: write_ptb_matrix_npy, write_ptb_ao_order, &
-         & write_ptb_basis_nwchem
+      use xtb_ptb_io, only: write_ptb_matrix_npy, write_ptb_matrix_npz_csr, &
+         & write_ptb_ao_order, write_ptb_basis_nwchem
 
       use mctc_io_structure, only: structure_type
 
@@ -477,13 +477,21 @@ module xtb_propertyoutput
       if (set%pr_wbofrag) &
          call print_wbo_fragment(iunit, struc%n, struc%at, wfx%wbo, 0.1_wp)
 
-      !> Export the density matrix, overlap matrix and basis set in the AO basis
-      !> as dense NumPy (.npy) files plus an NWChem basis description. The AO
-      !> ordering of the matrices is written out explicitly.
+      !> Export the density matrix, overlap matrix and basis set in the AO basis.
+      !> Dense NumPy (.npy) is the default; a sparse CSR (.npz) with a magnitude
+      !> threshold is used instead when requested in the $ptb control block. The
+      !> AO ordering of the matrices is written out explicitly.
       if (set%pr_ptbdump) then
          if (allocated(wfx%S) .and. allocated(wfx%aonorm)) then
-            call write_ptb_matrix_npy('ptb_density.npy', wfx%P)
-            call write_ptb_matrix_npy('ptb_overlap.npy', wfx%S)
+            if (set%ptbdump_sparse) then
+               call write_ptb_matrix_npz_csr('ptb_density.npz', wfx%P, &
+                  & set%ptbdump_threshold)
+               call write_ptb_matrix_npz_csr('ptb_overlap.npz', wfx%S, &
+                  & set%ptbdump_threshold)
+            else
+               call write_ptb_matrix_npy('ptb_density.npy', wfx%P)
+               call write_ptb_matrix_npy('ptb_overlap.npy', wfx%S)
+            end if
             call write_ptb_ao_order('ptb_ao_order.npy', bas)
             call open_file(ifile, 'ptb_basis.nw', 'w')
             !> 'bas' must be the persistent PTB basis (unscaled exponents,

@@ -179,14 +179,14 @@ OPTIONS
 
 *--ptbdump*::
     with *--ptb*, writes the density matrix ('ptb_density.npy'), the overlap
-    matrix ('ptb_overlap.npy') in the atomic-orbital basis, the vDZP basis set
-    in NWChem format ('ptb_basis.nw'), and the atomic-orbital ordering of the
-    matrices ('ptb_ao_order.npy'), together sufficient to reconstruct the
-    real-space density. The matrices use tblite's spherical-harmonic component
-    ordering (m = -l..+l per shell), which differs from the NWChem/PySCF
-    ordering for p shells (px, py, pz); 'ptb_ao_order.npy' gives the (atom, l,
-    m) of each row/column so a consumer can build the permutation to any target
-    program's convention.
+    matrix ('ptb_overlap.npy') in the atomic-orbital basis, and the vDZP basis
+    set in NWChem format ('ptb_basis.nw'), together sufficient to reconstruct
+    the real-space density. The matrices are written as NumPy arrays by default;
+    with 'sparse=true' in the '$ptb' control block they are written as SciPy
+    CSR sparse matrices ('ptb_density.npz', 'ptb_overlap.npz') instead. The 
+    matrices use tblite's spherical-harmonic component ordering (m = -l..+l per
+    shell); 'ptb_ao_order.npy' gives the (atom, l, m) of each row/column so a
+    consumer can build the permutation to any target program's convention.
 
 *--alpha* ::
     requests the extension of electrical properties to static molecular dipole polarizabilities
@@ -442,11 +442,13 @@ OUTPUT
 *molden.input*::
    MOs and occupation for visualisation and sTDA-xTB calculations
 
-*ptb_density.npy*::
+*ptb_density.npy*, *ptb_density.npz*::
    PTB density matrix in the atomic-orbital basis, as a dense NumPy array
+   (.npy) or, when 'sparse=true', a SciPy CSR sparse matrix (.npz)
 
-*ptb_overlap.npy*::
+*ptb_overlap.npy*, *ptb_overlap.npz*::
    PTB overlap matrix in the atomic-orbital basis, as a dense NumPy array
+   (.npy) or, when 'sparse=true', a SciPy CSR sparse matrix (.npz)
 
 *ptb_basis.nw*::
    PTB vDZP basis set in NWChem format for real-space reconstruction

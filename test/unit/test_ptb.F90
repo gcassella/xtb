@@ -71,6 +71,7 @@ contains
                   new_unittest("density_overlap_export", test_ptb_density_overlap_export), &
                   new_unittest("nwchem_basis_export", test_ptb_nwchem_basis_export), &
                   new_unittest("ao_order_export", test_ptb_ao_order_export), &
+                  new_unittest("matrix_npy_npz", test_ptb_matrix_npy_npz), &
                   new_unittest("polarizability", test_ptb_polarizability) &
 #else
                   new_unittest("ptb_not_present", test_ptb_not_present) &
@@ -1649,6 +1650,111 @@ contains
       end associate
 
    end subroutine test_ptb_ao_order_export
+
+   subroutine test_ptb_matrix_npy_npz(error)
+      !> Writes a small matrix through the dense (.npy) and sparse CSR (.npz)
+      !> writers and validates the produced byte streams: the .npy carries the
+      !> NumPy magic and version and round-trips its double-precision payload,
+      !> and the .npz is a ZIP whose end-of-central-directory reports the five
+      !> CSR member arrays.
+      use, intrinsic :: iso_fortran_env, only: int8, int16, int32, int64
+      use xtb_ptb_io, only: write_ptb_matrix_npy, write_ptb_matrix_npz_csr
+
+      type(error_type), allocatable, intent(out) :: error
+      real(wp), parameter :: mat(3, 3) = reshape( &
+         & [1.0_wp, 0.0_wp, 0.5_wp, 0.0_wp, 2.0_wp, 0.0_wp, 0.5_wp, 0.0_wp, 3.0_wp], [3, 3])
+      character(len=*), parameter :: npyfile = "test_ptb_matrix.npy"
+      character(len=*), parameter :: npzfile = "test_ptb_matrix.npz"
+      integer :: unit, headerlen
+      integer(int8) :: magic(6), version(2)
+      integer(int16) :: hlen16
+      integer(int32) :: signature, eocd_signature
+      integer(int16) :: total_members
+      real(wp) :: roundtrip(3, 3)
+
+      call write_ptb_matrix_npy(npyfile, mat)
+
+      open (newunit=unit, file=npyfile, access='stream', form='unformatted', &
+         & status='old')
+      read (unit) magic
+      read (unit) version
+      read (unit) hlen16
+      call check_(error, int(magic(1)), -109)
+      call check_(error, transfer(magic(2:6), "     "), "NUMPY")
+      call check_(error, int(version(1)), 1)
+      call check_(error, int(version(2)), 0)
+      headerlen = int(hlen16)
+      call check_(error, mod(10 + headerlen, 64), 0)
+      if (allocated(error)) then
+         close (unit)
+         call delete_file(npyfile)
+         return
+      end if
+      read (unit, pos=10 + headerlen + 1) roundtrip
+      close (unit)
+      call check_(error, maxval(abs(roundtrip - mat)), 0.0_wp, thr=thr)
+      if (allocated(error)) then
+         call delete_file(npyfile)
+         return
+      end if
+
+      call write_ptb_matrix_npz_csr(npzfile, mat, 1.0e-8_wp)
+
+      open (newunit=unit, file=npzfile, access='stream', form='unformatted', &
+         & status='old')
+      read (unit) signature
+      call check_(error, signature, int(z'04034b50', int32))
+      call read_eocd_member_count(unit, eocd_signature, total_members)
+      close (unit)
+      call check_(error, eocd_signature, int(z'06054b50', int32))
+      call check_(error, int(total_members), 5)
+
+      call delete_file(npyfile)
+      call delete_file(npzfile)
+
+   end subroutine test_ptb_matrix_npy_npz
+
+   !> Delete a file if it exists, used to clean up test artifacts.
+   subroutine delete_file(filename)
+      character(len=*), intent(in) :: filename
+
+      integer :: unit
+      logical :: exists
+
+      inquire (file=filename, exist=exists)
+      if (exists) then
+         open (newunit=unit, file=filename, status='old')
+         close (unit, status='delete')
+      end if
+   end subroutine delete_file
+
+   !> Scan a stream unit for the ZIP end-of-central-directory record and return
+   !> its signature and the total member count field.
+   subroutine read_eocd_member_count(unit, signature, total_members)
+      use, intrinsic :: iso_fortran_env, only: int8, int16, int32, int64
+      integer, intent(in) :: unit
+      integer(int32), intent(out) :: signature
+      integer(int16), intent(out) :: total_members
+
+      integer(int64) :: filesize, pos
+      integer(int32) :: word
+      integer(int16) :: skip
+
+      inquire (unit=unit, size=filesize)
+      signature = 0
+      total_members = 0
+      do pos = filesize - 21, 1, -1
+         read (unit, pos=pos) word
+         if (word == int(z'06054b50', int32)) then
+            signature = word
+            read (unit, pos=pos + 4) skip
+            read (unit, pos=pos + 6) skip
+            read (unit, pos=pos + 8) skip
+            read (unit, pos=pos + 10) total_members
+            return
+         end if
+      end do
+   end subroutine read_eocd_member_count
 
    subroutine test_ptb_mb16_43_01_charged(error)
       !> PTB overlap matrix calculation
