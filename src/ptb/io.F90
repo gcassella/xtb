@@ -78,14 +78,16 @@ contains
    !> Write the vDZP basis set in NWChem format, faithful to the normalized AO
    !> basis in which the exported density and overlap matrices are expressed.
    !>
-   !> Each atom is emitted under a unique tag (element symbol + one-based index,
-   !> e.g. "O1", "H2"); a consumer must apply the same tags to the geometry. The
-   !> contraction coefficients are scaled to unit self-overlap so that NWChem's
-   !> default primitive renormalization reproduces the functions unchanged.
+   !> One block is emitted per element under the plain element symbol. The PTB
+   !> basis carries no charge dependence (base vDZP exponents, expscal = 1), so
+   !> all atoms of the same element share an identical basis. The contraction
+   !> coefficients are scaled to unit self-overlap so that NWChem's default
+   !> primitive renormalization reproduces the functions unchanged.
    !>
    !> The exported matrices use tblite's spherical-harmonic component ordering,
-   !> which differs from NWChem's; a consumer reading this basis through NWChem
-   !> must reorder the matrix rows/columns accordingly.
+   !> which differs from NWChem's for p shells (tblite m = -1, 0, +1 versus
+   !> NWChem/PySCF px, py, pz); a consumer must reorder the p rows/columns of
+   !> the matrices accordingly.
    !>
    !> Args:
    !>   unit: Open, writable file unit.
@@ -98,23 +100,21 @@ contains
       type(basis_type), intent(in) :: bas
       real(wp), intent(in) :: aonorm(:)
 
-      integer :: iat, ish, ishg, iprim, angmom
+      integer :: isp, iat, ish, ishg, iprim, angmom
       real(wp) :: shellnorm
-      character(len=:), allocatable :: tag
+      character(len=:), allocatable :: symbol
       type(cgto_type) :: cgto
 
-      write (unit, '(a)') "# PTB vDZP basis set in NWChem format"
-      write (unit, '(a)') "# per-atom tags (element symbol + atom index) must be"
-      write (unit, '(a)') "# matched by the geometry block of the consumer"
-      write (unit, '(a)') 'basis "ao basis" spherical'
-      do iat = 1, mol%nat
-         tag = atom_tag(mol%num(mol%id(iat)), iat)
+      do isp = 1, mol%nid
+         iat = first_atom_of_species(mol, isp)
+         symbol = trim(to_symbol(mol%num(isp)))
+         write (unit, '(a)') "#BASIS SET: PTB vDZP"
          do ish = 1, bas%nsh_at(iat)
             ishg = bas%ish_at(iat) + ish
             cgto = bas%cgto(ish, iat)
             angmom = cgto%ang
             shellnorm = aonorm(bas%iao_sh(ishg) + 1)
-            write (unit, '(a,4x,a)') tag, nwchem_angmom_label(angmom)
+            write (unit, '(a,4x,a)') symbol, nwchem_angmom_label(angmom)
             do iprim = 1, cgto%nprim
                write (unit, '(4x,es24.16,4x,es24.16)') cgto%alpha(iprim), &
                   & nwchem_primitive_coeff(cgto%alpha(iprim), cgto%ang, &
@@ -122,7 +122,7 @@ contains
             end do
          end do
       end do
-      write (unit, '(a)') "end"
+      write (unit, '(a)') "END"
    end subroutine write_ptb_basis_nwchem
 
    !> Contraction coefficient written to the NWChem basis for one primitive.
@@ -158,17 +158,17 @@ contains
          & / sqrt(double_factorial(angmom))
    end function primitive_normalizer
 
-   !> Build a unique per-atom tag from the element symbol and atom index, e.g. "O1".
-   pure function atom_tag(znum, iat) result(tag)
-      integer, intent(in) :: znum
-      integer, intent(in) :: iat
-      character(len=:), allocatable :: tag
+   !> Index of the first atom belonging to a given species.
+   pure function first_atom_of_species(mol, isp) result(iat)
+      type(structure_type), intent(in) :: mol
+      integer, intent(in) :: isp
+      integer :: iat
 
-      character(len=16) :: idxbuffer
-
-      write (idxbuffer, '(i0)') iat
-      tag = trim(to_symbol(znum))//trim(idxbuffer)
-   end function atom_tag
+      do iat = 1, mol%nat
+         if (mol%id(iat) == isp) return
+      end do
+      iat = 0
+   end function first_atom_of_species
 
    !> Write a NumPy .npy version 1.0 header for a given dtype descriptor and
    !> shape tuple to a stream-access unit positioned at the start of the file.
