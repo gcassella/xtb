@@ -307,6 +307,8 @@ contains
       !> Must run after 'convert_tblite_to_wfn', which reallocates the
       !> wavefunction and would otherwise drop these fields.
       if (set%pr_ptbdump) then
+         if (allocated(chk%wfn%S)) deallocate (chk%wfn%S)
+         if (allocated(chk%wfn%aonorm)) deallocate (chk%wfn%aonorm)
          allocate (chk%wfn%S(self%bas%nao, self%bas%nao), source=ints%overlap)
          allocate (chk%wfn%aonorm(self%bas%nao), source=auxints%norm)
       end if

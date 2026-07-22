@@ -492,6 +492,8 @@ module xtb_propertyoutput
                call write_ptb_matrix_npy('ptb_overlap.npy', wfx%S)
             end if
             call open_file(ifile, 'ptb_basis.nw', 'w')
+            !> 'bas' must be the persistent PTB basis (unscaled exponents,
+            !> expscal = 1), matching the basis in which P and S are expressed.
             call write_ptb_basis_nwchem(ifile, mol, bas, wfx%aonorm)
             call close_file(ifile)
          else

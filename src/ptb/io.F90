@@ -47,8 +47,10 @@ module xtb_ptb_io
    public :: write_ptb_matrix_npy
    public :: write_ptb_matrix_npz_csr
    public :: write_ptb_basis_nwchem
+   public :: nwchem_primitive_coeff
+   public :: primitive_normalizer
 
-   !> Angular momentum labels used by the NWChem basis format, index l+1.
+   !> Angular momentum labels used by the NWChem basis format, indexed by l.
    character(len=1), parameter :: nwchem_angmom_label(0:6) = &
       & ["S", "P", "D", "F", "G", "H", "I"]
 
@@ -80,16 +82,16 @@ contains
       close (unit)
    end subroutine write_ptb_matrix_npy
 
-   !> Write a symmetric matrix as a SciPy CSR sparse matrix in a .npz file.
+   !> Write a matrix as a SciPy CSR sparse matrix in a .npz file, loadable via
+   !> scipy.sparse.load_npz. Only elements with abs(value) above the threshold
+   !> are stored. The AO ordering caveat of write_ptb_matrix_npy applies.
    !>
-   !> Only elements with absolute value above the threshold are stored. The full
-   !> (both-triangle) sparsity pattern is written so the result loads directly
-   !> via scipy.sparse.load_npz. The .npz is an uncompressed ZIP archive holding
-   !> the standard CSR members (format, shape, data, indices, indptr).
+   !> The archive uses 32-bit ZIP size fields, so an individual stored member
+   !> must stay below 2 GB (not ZIP64); this is not a concern for PTB systems.
    !>
    !> Args:
    !>   filename: Path of the .npz file to create.
-   !>   mat: Symmetric matrix in the spherical AO basis.
+   !>   mat: Matrix in the spherical AO basis.
    !>   threshold: Elements with abs(value) <= threshold are dropped.
    subroutine write_ptb_matrix_npz_csr(filename, mat, threshold)
       character(len=*), intent(in) :: filename
@@ -181,13 +183,35 @@ contains
             write (unit, '(a,4x,a)') tag, nwchem_angmom_label(angmom)
             do iprim = 1, cgto%nprim
                write (unit, '(4x,es24.16,4x,es24.16)') cgto%alpha(iprim), &
-                  & cgto%coeff(iprim) / primitive_normalizer(cgto%alpha(iprim), cgto%ang) &
-                  & * shellnorm
+                  & nwchem_primitive_coeff(cgto%alpha(iprim), cgto%ang, &
+                  & cgto%coeff(iprim), shellnorm)
             end do
          end do
       end do
       write (unit, '(a)') "end"
    end subroutine write_ptb_basis_nwchem
+
+   !> Contraction coefficient written to the NWChem basis for one primitive.
+   !>
+   !> NWChem stores bare primitive coefficients and re-applies the primitive
+   !> normalization on read, so this divides out the normalization tblite folded
+   !> into the coefficient and includes the per-shell factor relating the raw
+   !> contracted function to the normalized AO in which P and S are expressed.
+   !>
+   !> Args:
+   !>   alpha: Primitive Gaussian exponent.
+   !>   angmom: Angular momentum of the shell.
+   !>   coeff: Contraction coefficient as stored by tblite (normalized primitive).
+   !>   shellnorm: Per-shell AO normalization factor.
+   pure function nwchem_primitive_coeff(alpha, angmom, coeff, shellnorm) result(bare)
+      real(wp), intent(in) :: alpha
+      integer, intent(in) :: angmom
+      real(wp), intent(in) :: coeff
+      real(wp), intent(in) :: shellnorm
+      real(wp) :: bare
+
+      bare = coeff / primitive_normalizer(alpha, angmom) * shellnorm
+   end function nwchem_primitive_coeff
 
    !> Normalization factor tblite folds into a primitive Gaussian's contraction
    !> coefficient, used here to recover the bare primitive.
@@ -281,8 +305,8 @@ contains
       member%name = name
    end function npy_member_int64
 
-   !> Serialize a short ASCII string into an in-memory .npy payload. SciPy stores
-   !> the CSR "format" tag as a zero-dimensional byte-string array.
+   !> Serialize a short ASCII string into an in-memory .npy payload (a
+   !> zero-dimensional byte-string array, as SciPy expects for the CSR tag).
    function npy_member_char(name, string) result(member)
       character(len=*), intent(in) :: name
       character(len=*), intent(in) :: string
@@ -293,7 +317,7 @@ contains
 
       open (newunit=unit, status='scratch', access='stream', form='unformatted')
       write (descrbuffer, '(a,i0)') "|S", len(string)
-      call write_npy_header(unit, "()", descr=trim(descrbuffer))
+      call write_npy_header(unit, "()", descr=trim(descrbuffer), fortran_order=.false.)
       write (unit) string
       call slurp_scratch(unit, member%bytes)
       close (unit)

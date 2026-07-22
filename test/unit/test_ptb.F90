@@ -1463,16 +1463,23 @@ contains
    end subroutine test_ptb_density_overlap_export
 
    subroutine test_ptb_nwchem_basis_export(error)
-      !> Checks that every exported contracted function has unit self-overlap for
-      !> all spherical components, confirming the exported basis faithfully
-      !> reproduces the normalized AO basis of the density and overlap matrices.
-      !> The self-overlap is evaluated with tblite's contracted overlap routine.
+      !> Validates the NWChem basis export on two independent fronts. First, the
+      !> normalized contracted function (tblite coefficients scaled by the
+      !> per-shell aonorm factor) must have unit self-overlap across all
+      !> spherical components, evaluated with tblite's contracted overlap
+      !> routine; this confirms the per-shell normalization assumption. Second,
+      !> the bare coefficient the exporter writes, when re-normalized by an
+      !> independent restatement of the primitive normalization NWChem applies on
+      !> read, must reproduce the normalized coefficient exactly; this exercises
+      !> the exporter's divide-by-primitive-normalizer step without cancelling it
+      !> against the routine under test.
       use xtb_ptb_calculator, only: TPTBCalculator, newPTBcalculator
       use xtb_type_environment, only: TEnvironment, init
       use xtb_type_calculator, only: TCalculator
       use xtb_type_restart, only: TRestart
       use xtb_type_data, only: scc_results
       use xtb_setparam, only: set
+      use xtb_ptb_io, only: nwchem_primitive_coeff
       use tblite_basis_type, only: cgto_type
       use tblite_integral_overlap, only: overlap_cgto, msao
 
@@ -1487,7 +1494,10 @@ contains
       real(wp), allocatable :: gradient(:, :)
       real(wp) :: sigma(3, 3)
       integer :: iat, ish, ishg, iprim, angmom, mcomp
-      real(wp) :: shellnorm
+      real(wp) :: shellnorm, bare, refnorm
+      real(wp), parameter :: pi = 3.14159265358979323846_wp
+      !> Independent (2*l-1)!! reference for the primitive normalization check.
+      real(wp), parameter :: dfac(0:4) = [1.0_wp, 1.0_wp, 3.0_wp, 15.0_wp, 105.0_wp]
       type(cgto_type) :: cgto
       real(wp), allocatable :: shell_overlap(:, :)
 
@@ -1521,7 +1531,19 @@ contains
             do iprim = 1, cgto%nprim
                cgto%alpha(iprim) = ptb_save%bas%cgto(ish, iat)%alpha(iprim)
                cgto%coeff(iprim) = ptb_save%bas%cgto(ish, iat)%coeff(iprim) * shellnorm
+
+               !> Exporter round-trip: re-normalize the written bare coefficient
+               !> with an independent formula and recover the normalized value.
+               bare = nwchem_primitive_coeff(cgto%alpha(iprim), angmom, &
+                  & ptb_save%bas%cgto(ish, iat)%coeff(iprim), shellnorm)
+               refnorm = (2.0_wp * cgto%alpha(iprim) / pi)**0.75_wp &
+                  & * sqrt(4.0_wp * cgto%alpha(iprim))**angmom / sqrt(dfac(angmom))
+               call check_(error, bare * refnorm, cgto%coeff(iprim), thr=thr)
             end do
+            if (allocated(error)) then
+               set%pr_ptbdump = .false.
+               return
+            end if
 
             allocate (shell_overlap(msao(angmom), msao(angmom)))
             call overlap_cgto(cgto, cgto, 0.0_wp, [0.0_wp, 0.0_wp, 0.0_wp], &
@@ -1577,12 +1599,16 @@ contains
       call check_(error, mod(10 + headerlen, 64), 0)
       if (allocated(error)) then
          close (unit)
+         call delete_file(npyfile)
          return
       end if
       read (unit, pos=10 + headerlen + 1) roundtrip
       close (unit)
       call check_(error, maxval(abs(roundtrip - mat)), 0.0_wp, thr=thr)
-      if (allocated(error)) return
+      if (allocated(error)) then
+         call delete_file(npyfile)
+         return
+      end if
 
       call write_ptb_matrix_npz_csr(npzfile, mat, 1.0e-8_wp)
 
@@ -1595,7 +1621,24 @@ contains
       call check_(error, eocd_signature, int(z'06054b50', int32))
       call check_(error, int(total_members), 5)
 
+      call delete_file(npyfile)
+      call delete_file(npzfile)
+
    end subroutine test_ptb_matrix_npy_npz
+
+   !> Delete a file if it exists, used to clean up test artifacts.
+   subroutine delete_file(filename)
+      character(len=*), intent(in) :: filename
+
+      integer :: unit
+      logical :: exists
+
+      inquire (file=filename, exist=exists)
+      if (exists) then
+         open (newunit=unit, file=filename, status='old')
+         close (unit, status='delete')
+      end if
+   end subroutine delete_file
 
    !> Scan a stream unit for the ZIP end-of-central-directory record and return
    !> its signature and the total member count field.
